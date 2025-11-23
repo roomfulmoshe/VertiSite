@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>VertiSite — Greedy Vertiport Placement (NYC Tracts)</title>
+    <!-- D3 v7 -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+        :root {
+            --bg: #0b1220;
+            --panel: #111a2b;
+            --muted: #93a4bf;
+            --accent: #5cc8ff;
+            --accent-2: #ffd166;
+            --good: #22c55e;
+            --bad: #ef4444;
+            --base: #1f2a44;
+            --stroke: #0f172a;
+            --selected: #7c3aed;
+            --neighbor: #334155;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+            background: linear-gradient(180deg, #081022 0%, #0b1220 100%);
+            color: #e5e7eb;
+        }
+
+        header {
+            padding: 16px 20px;
+            display: flex;
+            gap: 16px;
+            align-items: center;
+            border-bottom: 1px solid #1e293b;
+            background: rgba(17, 26, 43, 0.85);
+            backdrop-filter: blur(6px);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        header h1 {
+            font-size: 18px;
+            margin: 0;
+            color: #e2e8f0;
+            font-weight: 600;
+        }
+
+        .tag {
+            color: var(--accent);
+            opacity: .9;
+            font-weight: 500;
+        }
+
+        .wrap {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 16px;
+            padding: 16px;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            padding: 16px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .28);
+        }
+
+        .panel h2 {
+            margin: 0 0 8px 0;
+            font-size: 16px;
+            color: #e5e7eb;
+        }
+
+        .panel .sub {
+            color: var(--muted);
+            font-size: 12px;
+            margin-bottom: 10px;
+        }
+
+        .ctrl {
+            margin: 12px 0 16px;
+        }
+
+        .ctrl label {
+            display: block;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+        }
+
+        .ctrl input[type="range"] {
+            width: 100%;
+        }
+
+        .ctrl .row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .ctrl .value {
+            min-width: 52px;
+            text-align: right;
+            color: #e2e8f0;
+            padding: 2px 6px;
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .btn {
+            background: linear-gradient(180deg, #1f2937, #0b1220);
+            color: #e2e8f0;
+            padding: 10px 12px;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: 600;
+        }
+
+        .btn:hover {
+            border-color: #475569;
+        }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .kpi {
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+        }
+
+        .kpi .v {
+            font-size: 16px;
+            font-weight: 700;
+            color: #e5e7eb;
+        }
+
+        .kpi .l {
+            font-size: 11px;
+            color: #93a4bf;
+        }
+
+        .legend {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .swatch {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            display: inline-block;
+            border: 1px solid #0f172a;
+        }
+
+        .swatch.selected {
+            background: var(--selected);
+        }
+
+        .swatch.neighbor {
+            background: var(--neighbor);
+        }
+
+        .swatch.candidate {
+            background: #1f2a44;
+        }
+
+        .swatch.background {
+            background: #0b1220;
+            border-color: #1e293b;
+        }
+
+        .map {
+            position: relative;
+            background: #0b1220;
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            overflow: hidden;
+            min-height: 720px;
+        }
+
+        .tooltip {
+            position: absolute;
+            pointer-events: none;
+            z-index: 8;
+            background: #0b1220;
+            border: 1px solid #1f2937;
+            border-radius: 8px;
+            padding: 8px 10px;
+            color: #e5e7eb;
+            font-size: 12px;
+            white-space: pre-line;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+        }
+
+        .note {
+            color: #93a4bf;
+            font-size: 12px;
+            margin-top: 8px;
+        }
+
+        .footer {
+            padding: 10px 16px;
+            color: #64748b;
+            font-size: 12px;
+            text-align: center;
+        }
+
+        svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        .tract {
+            fill: var(--base);
+            stroke: #0f172a;
+            stroke-width: .4px;
+        }
+
+        .tract.candidate {
+            fill: #203055;
+        }
+
+        .tract.neighbor {
+            fill: var(--neighbor);
+        }
+
+        .tract.selected {
+            fill: var(--selected);
+        }
+
+        .tract.disabled {
+            fill: #111827;
+        }
+
+        .ring {
+            fill: none;
+            stroke: #94a3b8;
+            stroke-width: 1.2px;
+            stroke-dasharray: 3 3;
+            opacity: .8;
+        }
+
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: rgba(8, 16, 34, 0.85);
+            backdrop-filter: blur(4px);
+            z-index: 20;
+        }
+
+        /* eVTOL spinner graphic */
+        .evtol-hover {
+            width: 300px;
+            height: auto;
+            animation: hover 2.4s ease-in-out infinite,
+                    vibrate 0.12s ease-in-out infinite; /* optional jitter */
+            opacity: 0.98;
+            filter: drop-shadow(0 12px 22px rgba(124, 58, 232, 0.25));
+        }
+        @keyframes hover {
+            0%   { transform: translateY(0px);   }
+            50%  { transform: translateY(-40px); }
+            100% { transform: translateY(0px);   }
+        }
+
+        .loading-text {
+            color: #93a4bf;
+            font-size: 25px;
+            letter-spacing: 0.5px;
+        }
+
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>VertiSite · Greedy Placement</h1>
+        <span class="tag">NYC Census Tracts</span>
+    </header>
+
+    <div class="wrap">
+        <!-- Controls -->
+        <div class="panel" id="controls">
+            <h2>Controls</h2>
+            <div class="sub">Choose number of vertiports and equity weight. Placement uses a greedy loop that removes
+                neighbors after each selection.</div>
+
+            <div class="ctrl">
+                <label for="pRange">Number of vertiports (2–200)</label>
+                <div class="row">
+                    <input id="pRange" type="range" min="2" max="200" step="1" value="4">
+                    <div class="value" id="pVal">4</div>
+                </div>
+            </div>
+
+            <div class="ctrl">
+                <label for="alphaRange">Equity weight (0–1)</label>
+                <div class="row">
+                    <input id="alphaRange" type="range" min="0" max="1" step="0.01" value="0.50">
+                    <div class="value" id="alphaVal">0.50</div>
+                </div>
+            </div>
+            <div class="ctrl">
+                <label for="distRange">Neighbor distance (0–5 km)</label>
+                <div class="row">
+                    <input id="distRange" type="range" min="0" max="5" step="0.1" value="1.0">
+                    <div class="value" id="distVal">1.0 km</div>
+                </div>
+            </div>
+
+            <button class="btn" id="runBtn">Run greedy placement</button>
+
+            <div class="kpis">
+                <div class="kpi">
+                    <div class="v" id="kpiSelected">0</div>
+                    <div class="l">Selected</div>
+                </div>
+                <div class="kpi">
+                    <div class="v" id="kpiCandidates">0</div>
+                    <div class="l">Eligible</div>
+                </div>
+                <div class="kpi">
+                    <div class="v" id="kpiCovered">0%</div>
+                    <div class="l">% Demand Captured*</div>
+                </div>
+                <div class="kpi">
+                    <div class="v" id="kpiEquity">—</div>
+                    <div class="l">Avg Equity (selected)</div>
+                </div>
+            </div>
+
+            <div class="legend">
+                <span class="swatch selected"></span> Selected
+                <span class="swatch neighbor"></span> Neighbors (excluded)
+                <span class="swatch candidate"></span> Candidates
+                <span class="swatch background"></span> Inactive
+            </div>
+
+            <div class="note">*Captured demand is approximated as the share of equity-adjusted OD volume incident on
+                selected tracts.</div>
+        </div>
+
+        <!-- Map -->
+        <div class="panel map" id="mapPanel">
+            <div id="map"></div>
+            <div id="tooltip" class="tooltip" style="opacity:0;"></div>
+        </div>
+
+        <!-- loading symbol -->
+        <div class="loading-overlay" id="loadingOverlay">
+            <img src="images/evtol.png" class="evtol-hover">
+            <div class="loading-text">Loading…</div>
+        </div>
+    </div>
+
+    <div class="footer">Built with D3 v7. Data: Universal Demand Map, ACS Equity, tract neighbors. Template styling
+        inspired by your tract viewer. </div>
+
+    <script>
+        //loading spinning evtol code
+        const loadingOverlay = document.getElementById("loadingOverlay");
+        function showLoading(msg = "Loading…") {
+            loadingOverlay.style.display = "flex";
+            loadingOverlay.querySelector(".loading-text").textContent = msg;
+        }
+        function hideLoading() {
+            loadingOverlay.style.display = "none";
+        }
+
+        (async function () {
+            // --------------------------
+            // File paths (relative)
+            // --------------------------
+            const TRACTS_GEOJSON = "nyc_tracts/nyc_tracts.json";
+            const DEMAND_CSV = "output/Universal_Demand_Map_Web.csv";
+            const ACS_CSV = "output/ACS_cleaned_equity.csv";
+            const NEIGHBORS_JSON = "output/nyc_tract_neighbors_1mile.json"; // still loaded, even if not used heavily
+
+            // --------------------------
+            // UI Elements
+            // --------------------------
+            const pRange = document.getElementById('pRange');
+            const pVal = document.getElementById('pVal');
+            const alphaRange = document.getElementById('alphaRange');
+            const alphaVal = document.getElementById('alphaVal');
+            const runBtn = document.getElementById('runBtn');
+
+            const kpiSelected = document.getElementById('kpiSelected');
+            const kpiCandidates = document.getElementById('kpiCandidates');
+            const kpiCovered = document.getElementById('kpiCovered');
+            const kpiEquity = document.getElementById('kpiEquity');
+
+            const distRange = document.getElementById('distRange');
+            const distVal = document.getElementById('distVal');
+
+            pRange.addEventListener('input', () => pVal.textContent = pRange.value);
+            alphaRange.addEventListener('input', () => alphaVal.textContent = (+alphaRange.value).toFixed(2));
+            distRange.addEventListener('input', () =>
+                distVal.textContent = distRange.value + " km"
+            );
+
+            // Helper: normalize tract ID to 7 digits
+            function pad7(x) {
+                return String(x).padStart(7, '0');
+            }
+
+            // --------------------------
+            // Load data
+            // --------------------------
+            showLoading("loading map and data…"); 
+            const [geo, demandRows, acsRows, neighborsJson] = await Promise.all([
+                d3.json(TRACTS_GEOJSON),
+                d3.csv(DEMAND_CSV, d3.autoType),
+                d3.csv(ACS_CSV, d3.autoType),
+                d3.json(NEIGHBORS_JSON)
+            ]);
+
+            // Max universal demand for normalization
+            const udMax = d3.max(demandRows, d => +d.universal_demand || 0);
+
+            // Map of equity weights by 7-digit tract id
+            const equity = new Map(acsRows.map(d => [pad7(d.tract_id), +d.equity_weight]));
+            // If missing, default to mean
+            const equityMean = d3.mean([...equity.values()]);
+
+            // Normalize tract id accessor from GeoJSON
+            const features = geo.features.map(f => {
+                // Prefer BoroCT2020 (7-digit). Fallback to TRACTCE or GEOID trimming.
+                let id = f.properties.BoroCT2020;
+                if (!id && f.properties.TRACTCE) id = pad7(f.properties.TRACTCE);
+                if (!id && f.properties.GEOID) id = String(f.properties.GEOID).slice(-7);
+                f.properties._TRACT7 = pad7(id);
+                return f;
+            });
+
+            // Build a quick lookup for feature by tract id
+            const featById = new Map(features.map(f => [f.properties._TRACT7, f]));
+
+            // --------------------------
+            // PRECOMPUTE NEIGHBORS BY DISTANCE (from demandRows.distance_km)
+            // For each pair (o,d), we store the MIN distance between them.
+            // neighborsByDist: Map<tractId, Array<{ id, dist }>>
+            // --------------------------
+            const neighborMap = new Map(); // Map<id, Map<neighborId, minDist>>
+
+            for (const r of demandRows) {
+                const o = pad7(r.origin_tract);
+                const d = pad7(r.destination_tract);
+                const dist = +r.distance_km;
+
+                if (!Number.isFinite(dist)) continue;
+
+                if (!neighborMap.has(o)) neighborMap.set(o, new Map());
+                if (!neighborMap.has(d)) neighborMap.set(d, new Map());
+
+                const mO = neighborMap.get(o);
+                const prevOD = mO.get(d);
+                if (prevOD === undefined || dist < prevOD) mO.set(d, dist);
+
+                const mD = neighborMap.get(d);
+                const prevDO = mD.get(o);
+                if (prevDO === undefined || dist < prevDO) mD.set(o, dist);
+            }
+
+            const neighborsByDist = new Map();
+            for (const [id, m] of neighborMap.entries()) {
+                neighborsByDist.set(
+                    id,
+                    [...m.entries()].map(([nid, dist]) => ({ id: nid, dist }))
+                );
+            }
+
+            // --------------------------
+            // Precompute equity-adjusted OD weights function
+            // Adjusted = universal_demand * ((1 - alpha) + alpha * mean(origin_equity, dest_equity))
+            // --------------------------
+            function computeAdjustedWeights(alpha) {
+                const adj = [];
+                let total = 0;
+
+                for (const r of demandRows) {
+                    const o = pad7(r.origin_tract);
+                    const d = pad7(r.destination_tract);
+
+                    const udRaw = +r.universal_demand || 0;
+                    const udNorm = udMax > 0 ? udRaw / udMax : 0;   // 0–1
+
+                    const eo = equity.get(o) ?? equityMean;
+                    const ed = equity.get(d) ?? equityMean;
+                    const eq = (eo + ed) / 2;                        // ~0–1
+
+                    // convex combination: alpha=0 → pure demand, alpha=1 → pure equity
+                    const w = (1 - alpha) * udNorm + alpha * eq;
+
+                    const ds = +r.distance_km;
+
+                    adj.push({ o, d, w, eo, ed, ds, udRaw });
+                    total += w;
+                }
+
+                return { adj, total };
+            }
+
+            // --------------------------
+            // Aggregate tract incident weight (in + out)
+            // --------------------------
+            function aggregateIncident(adj) {
+                const inc = new Map(); // tract -> incident weighted demand
+                for (const { o, d, w } of adj) {
+                    inc.set(o, (inc.get(o) || 0) + w);
+                    inc.set(d, (inc.get(d) || 0) + w);
+                }
+                return inc;
+            }
+
+            // --------------------------
+            // Greedy placement (original behavior)
+            // - While |selected| < p:
+            //   - score each candidate by incident weight
+            //   - pick best
+            //   - remove it + its neighbors from candidates
+            // --------------------------
+            function greedyPlace(p, adj, incidentMap, neighbors) {
+                const selected = [];
+                const disabled = new Set(); // neighbors + selected
+                const candidates = new Set([...incidentMap.keys()].filter(id => featById.has(id)));
+
+                const neigh = new Map(
+                    Object.entries(neighbors).map(([k, arr]) => [
+                        pad7(k),
+                        arr.map(x => pad7(x))
+                    ])
+                );
+
+                // Helper: eliminate a tract and its neighbors
+                function eliminate(id) {
+                    disabled.add(id);
+                    candidates.delete(id);
+                    const ns = neigh.get(id) || [];
+                    for (const n of ns) {
+                        disabled.add(n);
+                        candidates.delete(n);
+                    }
+                }
+
+                // Loop
+                while (selected.length < p) {
+                    if (!candidates.size) break;
+
+                    // Find argmax among remaining candidates
+                    let bestId = null, bestScore = -Infinity;
+                    for (const id of candidates) {
+                        if (disabled.has(id)) continue;
+                        const s = incidentMap.get(id) || 0;
+                        if (s > bestScore) { bestScore = s; bestId = id; }
+                    }
+                    if (!bestId || bestScore <= 0) break;
+
+                    selected.push({ id: bestId, score: bestScore });
+                    eliminate(bestId);
+                }
+
+                // Compute captured demand share (approximation): sum of incident on selected / total incident
+                const captured = d3.sum(selected, d => incidentMap.get(d.id) || 0);
+                const totalIncident = d3.sum(incidentMap.values());
+                const capturedPct = totalIncident > 0 ? (captured / totalIncident) : 0;
+
+                // Average equity of selected tracts
+                const avgEq = selected.length
+                    ? d3.mean(selected, d => equity.get(d.id) ?? equityMean)
+                    : null;
+
+                return { selected, disabled, capturedPct, avgEq };
+            }
+
+            // --------------------------
+            // Optimized Greedy placement with distance-based neighbors:
+            // Same greedy logic, but neighbors come from precomputed neighborsByDist + distance threshold.
+            // --------------------------
+            function greedyPlace2(p, adj, incidentMap, distanceThreshold = 5) {
+                const selected = [];
+                const disabled = new Set();
+                const candidates = new Set([...incidentMap.keys()].filter(id => featById.has(id)));
+
+                // Fast neighbor lookup using precomputed neighborsByDist and distance_km
+                function getNeighbors(id) {
+                    id = pad7(id);
+                    const list = neighborsByDist.get(id) || [];
+                    const out = [];
+                    for (const n of list) {
+                        if (!Number.isFinite(n.dist)) continue;
+                        if (n.dist < distanceThreshold) {
+                            out.push(n.id);
+                        }
+                    }
+                    return out;
+                }
+
+                function eliminate(id) {
+                    disabled.add(id);
+                    candidates.delete(id);
+
+                    const ns = getNeighbors(id);
+                    for (const n of ns) {
+                        disabled.add(n);
+                        candidates.delete(n);
+                    }
+                }
+
+                while (selected.length < p) {
+                    if (!candidates.size) break;
+
+                    let bestId = null;
+                    let bestScore = -Infinity;
+
+                    for (const id of candidates) {
+                        if (disabled.has(id)) continue;
+                        const s = incidentMap.get(id) || 0;
+                        if (s > bestScore) {
+                            bestScore = s;
+                            bestId = id;
+                        }
+                    }
+
+                    if (!bestId || bestScore <= 0) break;
+
+                    selected.push({ id: bestId, score: bestScore });
+                    eliminate(bestId);
+                }
+
+                const captured = d3.sum(selected, d => incidentMap.get(d.id) || 0);
+                const totalIncident = d3.sum(incidentMap.values());
+                const capturedPct = totalIncident > 0 ? captured / totalIncident : 0;
+
+                const avgEq = selected.length
+                    ? d3.mean(selected, d => equity.get(d.id) ?? equityMean)
+                    : null;
+
+                return { selected, disabled, capturedPct, avgEq };
+            }
+
+            // --------------------------
+            // Map setup (FLIPPED VERTICALLY)
+            // --------------------------
+            const mapEl = d3.select("#map");
+            const tooltip = d3.select("#tooltip");
+
+            const width = mapEl.node().clientWidth || 900;
+            const height = Math.max(680, Math.round(width * 0.65));
+
+            const svg = mapEl.append("svg")
+                .attr("viewBox", [0, 0, width, height])
+                .attr("width", "100%")
+                .attr("height", "100%");
+
+            const g = svg.append("g");
+
+            // Fit projection to NYC tracts, but FLIP vertically so map looks "normal"
+            const projection = d3.geoIdentity().reflectY(true);
+            const path = d3.geoPath(projection);
+            projection.fitExtent([[10, 10], [width - 10, height - 10]], { type: "FeatureCollection", features });
+
+            // Draw tracts
+            const tractPaths = g.selectAll("path.tract")
+                .data(features)
+                .join("path")
+                .attr("class", "tract disabled")
+                .attr("d", path)
+                .on("mousemove", (event, f) => {
+                    const id = f.properties._TRACT7;
+                    const eq = equity.get(id) ?? equityMean;
+                    tooltip
+                        .style("opacity", 1)
+                        .style("left", (event.offsetX + 14) + "px")
+                        .style("top", (event.offsetY + 14) + "px")
+                        .html(`Tract: ${id}\nEquity: ${eq.toFixed(3)}`);
+                })
+                .on("mouseleave", () => tooltip.style("opacity", 0));
+
+            // Zoom / pan
+            svg.call(d3.zoom().scaleExtent([1, 30]).on("zoom", ({ transform }) => g.attr("transform", transform)));
+
+            hideLoading();
+
+            // --------------------------
+            // Run pipeline (compute, place, paint)
+            // --------------------------
+            async function run() {
+                const P = +pRange.value;
+                const alpha = +alphaRange.value;
+                const distThresh = +distRange.value;
+
+                // 1) Equity-adjusted weights
+                const { adj, total } = computeAdjustedWeights(alpha);
+
+                // 2) Aggregate per-tract incident weight
+                const incident = aggregateIncident(adj);
+
+                // 3) Greedy place + neighbor elimination with distance threshold
+                const { selected, disabled, capturedPct, avgEq } = greedyPlace2(P, adj, incident, distThresh);
+
+                // 4) Paint
+                const selectedIds = new Set(selected.map(d => d.id));
+
+                tractPaths
+                    .attr("class", d => {
+                        const id = d.properties._TRACT7;
+                        if (selectedIds.has(id)) return "tract selected";
+                        if (disabled.has(id)) return "tract neighbor";
+                        return incident.has(id) ? "tract candidate" : "tract disabled";
+                    });
+
+                // Optional: draw subtle rings on selected tracts (centroid-based)
+                g.selectAll("circle.ring").remove();
+                g.selectAll("circle.ring")
+                    .data(selected.map(s => featById.get(s.id)).filter(Boolean))
+                    .join("circle")
+                    .attr("class", "ring")
+                    .attr("cx", d => path.centroid(d)[0])
+                    .attr("cy", d => path.centroid(d)[1])
+                    .attr("r", 8);
+
+                // KPIs
+                kpiSelected.textContent = selected.length;
+                kpiCandidates.textContent = [...incident.keys()].length;
+                kpiCovered.textContent = (capturedPct * 100).toFixed(1) + "%";
+                kpiEquity.textContent = (avgEq ?? 0).toFixed(3);
+            }
+            async function triggerRun(label = "Running greedy placement…") {
+                showLoading(label);
+                runBtn.disabled = true;
+
+                // give the browser a tick to paint the overlay
+                await new Promise(resolve => setTimeout(resolve, 0));
+
+                try {
+                    await run();
+                } finally {
+                    runBtn.disabled = false;
+                    hideLoading();
+                }
+            }
+
+            runBtn.addEventListener('click', () => triggerRun("Running greedy placement…"));
+
+            // Initial values UI
+            pVal.textContent = pRange.value;
+            alphaVal.textContent = (+alphaRange.value).toFixed(2);
+            distVal.textContent = distRange.value + " km";
+
+            // First render
+            await run(true);
+
+        })();
+    </script>
+
+</body>
+
+</html>
