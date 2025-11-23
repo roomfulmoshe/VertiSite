@@ -465,40 +465,55 @@
             // Build a quick lookup for feature by tract id
             const featById = new Map(features.map(f => [f.properties._TRACT7, f]));
 
+          // --------------------------
+            // NEW: PRECOMPUTE NEIGHBORS (PROJECTED / FEET)
+            // 1. Calculate centroid in State Plane Feet (using null projection).
+            // 2. Euclidean distance in Feet -> Convert to Km.
             // --------------------------
-            // PRECOMPUTE NEIGHBORS BY DISTANCE (from demandRows.distance_km)
-            // For each pair (o,d), we store the MIN distance between them.
-            // neighborsByDist: Map<tractId, Array<{ id, dist }>>
-            // --------------------------
-            const neighborMap = new Map(); // Map<id, Map<neighborId, minDist>>
 
-            for (const r of demandRows) {
-                const o = pad7(r.origin_tract);
-                const d = pad7(r.destination_tract);
-                const dist = +r.distance_km;
+            // Helper: Path generator for raw coordinates (Feet)
+            const rawPath = d3.geoPath(null);
 
-                if (!Number.isFinite(dist)) continue;
-
-                if (!neighborMap.has(o)) neighborMap.set(o, new Map());
-                if (!neighborMap.has(d)) neighborMap.set(d, new Map());
-
-                const mO = neighborMap.get(o);
-                const prevOD = mO.get(d);
-                if (prevOD === undefined || dist < prevOD) mO.set(d, dist);
-
-                const mD = neighborMap.get(d);
-                const prevDO = mD.get(o);
-                if (prevDO === undefined || dist < prevDO) mD.set(o, dist);
+            // 1. Extract centroids from features (in Feet)
+            const centroids = new Map();
+            for (const f of features) {
+                // rawPath.centroid(f) returns [x, y] in the file's native units (Feet)
+                const c = rawPath.centroid(f);
+                centroids.set(f.properties._TRACT7, { x: c[0], y: c[1] });
             }
 
+            // 2. Build the Neighbor Map
+            // 1 foot = 0.0003048 kilometers
+            const FT_TO_KM = 0.0003048;
             const neighborsByDist = new Map();
-            for (const [id, m] of neighborMap.entries()) {
-                neighborsByDist.set(
-                    id,
-                    [...m.entries()].map(([nid, dist]) => ({ id: nid, dist }))
-                );
-            }
+            const tractIds = Array.from(centroids.keys());
 
+            for (let i = 0; i < tractIds.length; i++) {
+                const idA = tractIds[i];
+                const cA = centroids.get(idA);
+                const neighbors = [];
+
+                for (let j = 0; j < tractIds.length; j++) {
+                    if (i === j) continue;
+
+                    const idB = tractIds[j];
+                    const cB = centroids.get(idB);
+                    if (!cA || !cB) continue;
+
+                    // Euclidean Distance (Pythagorean theorem)
+                    const dx = cA.x - cB.x;
+                    const dy = cA.y - cB.y;
+                    const distFt = Math.sqrt(dx * dx + dy * dy);
+
+                    const distKm = distFt * FT_TO_KM;
+
+                    // Store if within max range (6.0 km buffer)
+                    if (distKm <= 6.0) {
+                        neighbors.push({ id: idB, dist: distKm });
+                    }
+                }
+                neighborsByDist.set(idA, neighbors);
+            }
             // --------------------------
             // Precompute equity-adjusted OD weights function
             // Adjusted = universal_demand * ((1 - alpha) + alpha * mean(origin_equity, dest_equity))
