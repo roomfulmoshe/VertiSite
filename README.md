@@ -1,4 +1,4 @@
-# Transit / Demand Data Processing (CSE6242)
+# Transit / Demand Data Processing
 
 This repository contains scripts and notebooks used to process, join, and visualize New York City spatial and trip-demand datasets (ACS, LODES, TLC, taxi zones). The code was developed for a class project and includes data preparation, neighbor generation, demand aggregation, and map visualization outputs.
 
